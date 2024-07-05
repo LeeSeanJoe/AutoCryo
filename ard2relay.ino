@@ -1,0 +1,82 @@
+#include <ESP8266WiFi.h>
+
+// Define pins
+const int relayPin = 7;  
+const int pressureSensorPin = A0;  
+
+// Initialize threshold values
+int warningThreshold = 350;  // Example warning threshold, adjust based on sensor specs
+int shutdownThreshold = 300; // Example shutdown threshold, adjust based on sensor specs
+
+// WiFi credentials
+const char* ssid = "your_SSID";
+const char* password = "your_PASSWORD";
+
+WiFiServer server(80);
+
+void setup() {
+  pinMode(relayPin, OUTPUT);  
+  pinMode(pressureSensorPin, INPUT);  
+  Serial.begin(9600);  
+
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("Connected to WiFi");
+  server.begin();
+}
+
+void loop() {
+  // Read the pressure sensor value
+  int pressureValue = analogRead(pressureSensorPin);
+
+  // Print the pressure value for debugging
+  Serial.print("Pressure Value: ");
+  Serial.println(pressureValue);
+
+  // Check if the pressure is below the thresholds
+  if (pressureValue < warningThreshold) {
+    Serial.println("Warning: Low helium level.");
+  }
+
+  if (pressureValue < shutdownThreshold) {
+    Serial.println("Emergency shutdown activated due to low helium level.");
+    digitalWrite(relayPin, LOW);  
+  } else {
+    digitalWrite(relayPin, HIGH); 
+  }
+
+  // Handle incoming WiFi requests
+  WiFiClient client = server.available();
+  if (client) {
+    if (client.available()) {
+      String request = client.readStringUntil('\r');
+      client.flush();
+
+      if (request.indexOf("/pressure") != -1) {
+        String pressureString = request.substring(request.indexOf('=') + 1);
+        int pressureValue = pressureString.toInt();
+        if (pressureValue < warningThreshold) {
+          Serial.println("Warning: Low helium level.");
+        }
+        if (pressureValue < shutdownThreshold) {
+          Serial.println("Emergency shutdown activated due to low helium level.");
+          digitalWrite(relayPin, LOW);  
+        } else {
+          digitalWrite(relayPin, HIGH); 
+        }
+      } else if (request.indexOf("/setWarning") != -1) {
+        String warningString = request.substring(request.indexOf('=') + 1);
+        warningThreshold = warningString.toInt();
+      } else if (request.indexOf("/setShutdown") != -1) {
+        String shutdownString = request.substring(request.indexOf('=') + 1);
+        shutdownThreshold = shutdownString.toInt();
+      }
+      delay(1);
+      client.stop();
+    }
+  }
+  delay(1000);  // Check duration
+}
